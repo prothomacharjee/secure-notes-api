@@ -9,15 +9,9 @@ const MEMBERS_PER_GROUP = 20;
 // Scenario 1: exactly one aggregate() call.
 router.get('/interests', async (req, res) => {
   const p = pageParams(req.query);
-  const interest = typeof req.query.interest === 'string' ? req.query.interest.toLowerCase().trim() : '';
-  // Leading $match uses { interests: 1 }; repeating it after $unwind drops the user's other interests.
-  const only = interest ? [{ $match: { interests: interest } }] : [];
-
   const rows = await User.aggregate([
-    ...only,
     { $project: { name: 1, interests: 1 } },
     { $unwind: '$interests' },
-    ...only,
     {
       $group: {
         _id: '$interests',

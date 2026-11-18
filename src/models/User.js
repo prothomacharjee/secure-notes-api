@@ -14,8 +14,6 @@ const userSchema = new mongoose.Schema(
 
 // Login lookup + uniqueness.
 userSchema.index({ email: 1 }, { unique: true });
-// Multikey; serves the ?interest= filter in the group-by-interests pipeline.
-userSchema.index({ interests: 1 });
 
 userSchema.pre('save', async function () {
   // Fail fast on a taken email: bcrypt (cost 12) is slow and would run before the unique index rejects.

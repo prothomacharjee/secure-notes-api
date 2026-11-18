@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 
 process.env.JWT_SECRET = 'test-secret';
 const { default: app } = await import('../src/app.js');
@@ -10,7 +10,7 @@ const { seedDemo, DEMO_ADMIN, DEMO_PASSWORD } = await import('../scripts/demo-da
 let mongo, server, base, admin, user;
 
 before(async () => {
-  mongo = await MongoMemoryServer.create();
+  mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(mongo.getUri());
   await mongoose.connection.syncIndexes();
   server = app.listen(0);
@@ -72,13 +72,10 @@ test('admin: users pages, all-notes pages, owner filter, role guard', async () =
   assert.equal(mine.body.items.length, 25);
 });
 
-test('interest search: filter, case-insensitive, no match, pagination', async () => {
+test('interest grouping: all groups, pagination', async () => {
   const all = await api('/users/interests?limit=50', { token: user.token });
   assert.equal(all.body.items.length, 8);
-  const chess = await api('/users/interests?interest=CHESS', { token: user.token });
-  assert.deepEqual(chess.body.items.map((g) => g.interest), ['chess']);
-  assert.ok(chess.body.items[0].count > 1);
-  assert.equal((await api('/users/interests?interest=nope', { token: user.token })).body.items.length, 0);
+  assert.ok(all.body.items.find((g) => g.interest === 'chess').count > 1);
   const pg = await api('/users/interests?limit=3', { token: user.token });
   assert.equal(pg.body.items.length, 3);
   assert.equal(pg.body.hasMore, true);

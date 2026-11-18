@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Note from '../models/Note.js';
 import Post from '../models/Post.js';
@@ -36,9 +37,15 @@ router.patch('/users/:id', async (req, res) => {
 
 router.delete('/users/:id', async (req, res) => {
   if (req.user._id.equals(req.params.id)) return res.status(400).json({ error: 'Cannot delete yourself' });
-  const { deletedCount } = await User.deleteOne({ _id: req.params.id });
-  if (!deletedCount) return res.status(404).json({ error: 'User not found' });
-  await Promise.all([Note.deleteMany({ owner: req.params.id }), Post.deleteMany({ author: req.params.id })]);
+  // One transaction: the user and their notes/posts go together or not at all (needs a replica set; Atlas is one).
+  let deleted = 0;
+  await mongoose.connection.transaction(async (session) => {
+    ({ deletedCount: deleted } = await User.deleteOne({ _id: req.params.id }, { session }));
+    if (!deleted) return;
+    await Note.deleteMany({ owner: req.params.id }, { session });
+    await Post.deleteMany({ author: req.params.id }, { session });
+  });
+  if (!deleted) return res.status(404).json({ error: 'User not found' });
   res.status(204).end();
 });
 

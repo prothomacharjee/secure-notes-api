@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 
 process.env.JWT_SECRET = 'test-secret';
 const { default: app } = await import('../src/app.js');
@@ -11,7 +11,7 @@ const { default: Note } = await import('../src/models/Note.js');
 let mongo, server, base;
 
 before(async () => {
-  mongo = await MongoMemoryServer.create();
+  mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(mongo.getUri());
   await mongoose.connection.syncIndexes();
   server = app.listen(0);
@@ -126,9 +126,6 @@ test('aggregation: group by interests', async () => {
   assert.equal(chess.count, 2);
   assert.deepEqual(chess.users.map((u) => u.name).sort(), ['alice', 'bob']);
   assert.equal(all.body.items.find((g) => g.interest === 'reading').count, 1);
-
-  const one = await api('/users/interests?interest=Chess', { token: alice.token });
-  assert.deepEqual(one.body.items.map((g) => g.interest), ['chess']);
 });
 
 test('aggregation: user posts via $lookup', async () => {
@@ -142,7 +139,7 @@ test('aggregation: user posts via $lookup', async () => {
 
 test('indexes: exactly the planned set, and list queries use them', async () => {
   const names = async (m) => (await m.collection.indexes()).map((i) => i.name).sort();
-  assert.deepEqual(await names(User), ['_id_', 'email_1', 'interests_1']);
+  assert.deepEqual(await names(User), ['_id_', 'email_1']);
   assert.deepEqual(await names(Note), ['_id_', 'owner_1__id_-1']);
   assert.deepEqual(await names(mongoose.model('Post')), ['_id_', 'author_1__id_-1']);
 
@@ -150,6 +147,18 @@ test('indexes: exactly the planned set, and list queries use them', async () => 
   assert.match(plan, /owner_1__id_-1/);
   assert.doesNotMatch(plan, /"stage":"SORT"/);
 
-  const agg = JSON.stringify(await User.aggregate([{ $match: { interests: 'chess' } }]).explain());
-  assert.match(agg, /interests_1/);
+});
+
+test('delete user: transaction rolls back when a child delete fails', async () => {
+  const victim = await register('victim');
+  await api('/notes', { token: victim.token, method: 'POST', body: { title: 'keep me' } });
+  const orig = Note.deleteMany;
+  Note.deleteMany = () => { throw new Error('boom'); };
+  try {
+    assert.equal((await api(`/admin/users/${victim.user._id}`, { token: admin.token, method: 'DELETE' })).status, 500);
+  } finally {
+    Note.deleteMany = orig;
+  }
+  assert.ok(await User.exists({ _id: victim.user._id })); // user still there
+  assert.equal(await Note.countDocuments({ owner: victim.user._id }), 1);
 });
