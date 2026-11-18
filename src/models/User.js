@@ -18,6 +18,12 @@ userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ interests: 1 });
 
 userSchema.pre('save', async function () {
+  // Fail fast on a taken email: bcrypt (cost 12) is slow and would run before the unique index rejects.
+  if (this.isModified('email') && (await this.constructor.exists({ email: this.email, _id: { $ne: this._id } }))) {
+    const err = new Error('Email already in use');
+    err.code = 11000; // handled as 409 in app.js
+    throw err;
+  }
   if (this.isModified('password')) this.password = await bcrypt.hash(this.password, 12);
 });
 

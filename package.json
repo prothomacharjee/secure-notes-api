@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --env-file=.env --watch src/server.js",
+    "seed:demo": "node --env-file=.env scripts/seed-demo.js",
     "seed:admin": "node --env-file=.env scripts/seed-admin.js",
     "test": "node --test"
   },
